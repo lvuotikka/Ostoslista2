@@ -1,98 +1,155 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
+import {
+  Button,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  TouchableOpacity,
+} from 'react-native';
+import * as SQLite from 'expo-sqlite';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+interface ShoppingItem {
+  id: number;
+  product: string;
+  amount: string;
 }
 
-export default function HomeScreen() {
+const db = SQLite.openDatabaseSync('shoppinglist.db');
+
+export default function App() {
+  const [product, setProduct] = useState('');
+  const [amount, setAmount] = useState('');
+  const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
+
+  useEffect(() => {
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS shopping_list (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product TEXT NOT NULL,
+          amount TEXT NOT NULL
+        );
+      `);
+      updateList();
+    } catch (error) {
+      console.error("Virhe tietokannan alustuksessa:", error);
+    }
+  }, []);
+
+  const updateList = () => {
+    try {
+      const allRows = db.getAllSync<ShoppingItem>('SELECT * FROM shopping_list;');
+      setShoppingList(allRows);
+    } catch (error) {
+      console.error("Virhe haettaessa tietoja:", error);
+    }
+  };
+
+  const saveItem = () => {
+    if (product.trim() === '' || amount.trim() === '') {
+      return;
+    }
+
+    try {
+      db.runSync(
+        'INSERT INTO shopping_list (product, amount) VALUES (?, ?);',
+        [product, amount]
+      );
+      setProduct('');
+      setAmount('');
+      updateList();
+    } catch (error) {
+      console.error("Virhe tallennettaessa:", error);
+    }
+  };
+
+  const deleteItem = (id: number) => {
+    try {
+      db.runSync('DELETE FROM shopping_list WHERE id = ?;', [id]);
+      updateList();
+    } catch (error) {
+      console.error("Virhe poistettaessa:", error);
+    }
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <View style={styles.container}>
+      <TextInput
+        style={styles.input}
+        placeholder="Tuote"
+        value={product}
+        onChangeText={setProduct}
+      />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      <TextInput
+        style={styles.input}
+        placeholder="Määrä"
+        value={amount}
+        onChangeText={setAmount}
+      />
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+      <View style={styles.buttonContainer}>
+        <Button title="Tallenna" onPress={saveItem} />
+      </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <Text style={styles.headerText}>Ostoslista</Text>
+
+      <FlatList
+        data={shoppingList}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.listItem}>
+            <Text style={styles.itemText}>
+              {item.product}, {item.amount}
+            </Text>
+            <TouchableOpacity onPress={() => deleteItem(item.id)}>
+              <Text style={styles.boughtText}>Valmis</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 60,
+  },
+  input: {
+    width: 200,
+    borderColor: 'gray',
+    borderWidth: 1,
+    padding: 8,
+    marginBottom: 8,
+  },
+  buttonContainer: {
+    marginVertical: 10,
+    width: 90,
+  },
+  headerText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 15,
+    marginBottom: 10,
+  },
+  listItem: {
     flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    marginVertical: 4,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+  itemText: {
+    fontSize: 16,
   },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  boughtText: {
+    color: 'blue',
+    marginLeft: 10,
+    fontSize: 16,
   },
 });
